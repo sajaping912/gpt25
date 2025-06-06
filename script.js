@@ -984,12 +984,14 @@ const WORD_ANIM_MAX_HEIGHT = 18;
 
 // --- START: 의문사 복제본 관련 변수들 ---
 let questionWordClones = []; // 생성된 의문사 복제본들을 저장
-const CLONE_OFFSET_Y = 50; // 복제본이 원본에서 위로 얼마나 떨어져 있을지
+const CLONE_OFFSET_Y = 50; // 의문사 복제본이 원본에서 위로 얼마나 떨어져 있을지
 let cloneCreatedForCurrentQuestion = false; // 현재 질문에서 복제본이 이미 생성되었는지 추적
 // --- END: 의문사 복제본 관련 변수들 ---
 
 // --- START: 주어+조동사 복제본 관련 변수들 ---
 let subjectAuxClones = []; // 생성된 주어+조동사 복제본들을 저장
+const SUBJECT_AUX_CLONE_OFFSET_Y = 60; // 주어+조동사 복제본이 원본에서 위로 얼마나 떨어져 있을지 (의문사 복제본보다 10px 더 위)
+const SUBJECT_AUX_CLONE_OFFSET_X = 15; // 주어+조동사 복제본이 의문사 복제본에서 오른쪽으로 15px 떨어져 있을지
 let cloneCreatedForCurrentAnswer = false; // 현재 답변에서 복제본이 이미 생성되었는지 추적
 // --- END: 주어+조동사 복제본 관련 변수들 ---
 
@@ -1181,13 +1183,25 @@ function createSubjectAuxClone(subjectAnimation, auxAnimation) {
   // 주어 + 조동사 텍스트 결합 (순서 바뀜)
   const combinedText = subjectAnimation.wordText + " " + auxAnimation.wordText;
   
+  // 의문사 복제본이 있는 경우 그 끝 위치를 찾아서 10px 떨어뜨리기
+  let targetX = auxAnimation.targetWordRect.x; // 기본값: 조동사 위치
+  
+  if (questionWordClones.length > 0) {
+    const questionClone = questionWordClones[0]; // 첫 번째 의문사 복제본 사용
+    if (questionClone.charPositions && questionClone.charPositions.length > 0) {
+      // 의문사 복제본의 마지막 문자 위치 + 너비 + 10px
+      const lastChar = questionClone.charPositions[questionClone.charPositions.length - 1];
+      targetX = lastChar.x + lastChar.width + SUBJECT_AUX_CLONE_OFFSET_X;
+    }
+  }
+  
   const clone = {
     subjectWord: subjectAnimation.wordText,
     auxWord: auxAnimation.wordText,
     combinedText: combinedText,
-    originalX: auxAnimation.targetWordRect.x, // 조동사 위치에서 시작
+    originalX: targetX, // 의문사 복제본 끝에서 10px 떨어진 위치
     originalY: currentAnimationHighPoint,
-    targetY: currentAnimationHighPoint - CLONE_OFFSET_Y,
+    targetY: currentAnimationHighPoint - CLONE_OFFSET_Y, // 의문사 복제본과 같은 높이로
     currentY: currentAnimationHighPoint,
     charPositions: [], // 결합된 텍스트의 각 문자 위치
     createdTime: performance.now(),
@@ -1729,13 +1743,23 @@ function drawCenterSentence() {
             clone.charPositions.forEach(charPos => {
                 ctx.fillText(charPos.char, charPos.x, charPos.currentY);
             });
-            
-            // "?" 기호 그리기 (복제본 위 10px 위치)
+              // "?" 기호 그리기 (복제본의 마지막 글자 위에 위치)
             ctx.fillStyle = '#FFD600';
             ctx.textAlign = "center";
-            const questionMarkX = clone.originalX + ctx.measureText(clone.word).width / 2;
-            const questionMarkY = clone.currentY - 15;
-            ctx.fillText("?", questionMarkX, questionMarkY);
+            
+            // 마지막 글자의 위치 계산
+            if (clone.charPositions && clone.charPositions.length > 0) {
+                const lastCharPos = clone.charPositions[clone.charPositions.length - 1];
+                const questionMarkX = lastCharPos.x + (lastCharPos.width / 2);
+                const questionMarkY = clone.currentY - 15;
+                ctx.fillText("?", questionMarkX, questionMarkY);
+            } else {
+                // 폴백: 단어 전체 중앙에 표시
+                const questionMarkX = clone.originalX + ctx.measureText(clone.word).width / 2;
+                const questionMarkY = clone.currentY - 15;
+                ctx.fillText("?", questionMarkX, questionMarkY);
+            }
+            
             ctx.textAlign = "left"; // 다시 기본값으로 복원
         });
         
