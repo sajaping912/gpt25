@@ -822,7 +822,49 @@ function splitSentence(sentenceText, isCurrentlyQuestion = null) {
     const originalSentenceForShortCheck = sentenceText.trim();
 
     let line1Words = [];
-    let line2Words = [];
+    let line2Words = [];    // 의문사+조동사+주어+동사 패턴 확인 및 특별 처리
+    console.log("🔍 Checking splitSentence for:", sentenceText);
+    console.log("🔍 Words:", words);
+    console.log("🔍 isCurrentlyQuestion:", isCurrentlyQuestion);
+    
+    const firstWordClean = words.length > 0 ? words[0].toLowerCase().replace(/[^a-z0-9']/g, "") : "";
+    const secondWordClean = words.length > 1 ? words[1].toLowerCase().replace(/[^a-z0-9']/g, "") : "";
+    
+    console.log("🔍 First word clean:", firstWordClean, "isWh:", isWh(firstWordClean));
+    console.log("🔍 Second word clean:", secondWordClean, "isAux:", isAux(secondWordClean));
+    
+    const isQuestionWordAuxSubjectVerbForm = isCurrentlyQuestion !== false && 
+        words.length >= 4 && 
+        isWh(firstWordClean) &&
+        isAux(secondWordClean);
+    
+    console.log("🔍 Pattern match result:", isQuestionWordAuxSubjectVerbForm);    if (isQuestionWordAuxSubjectVerbForm) {
+        // 의문사+조동사+주어+동사 패턴에서는 최소 4개 단어까지 첫째 줄에 포함
+        // 추가로 동사를 찾아서 동사까지 포함시킴
+        let verbIndex = 3; // 최소 4번째 단어(인덱스 3)까지는 포함
+        
+        for (let i = 3; i < words.length; i++) {
+            const word = words[i].toLowerCase().replace(/[^a-z0-9']/g, "");
+            console.log("🔍 Checking word at index", i, ":", word, "isVerb:", isVerb(word), "isAux:", isAux(word));
+            
+            // 특별 케이스: "do"는 의문문에서 일반동사로 취급
+            const isMainVerb = (isVerb(word) && !isAux(word)) || 
+                               (word === "do" && i > 1); // 2번째 위치 이후의 "do"는 일반동사
+            
+            if (isMainVerb) {
+                verbIndex = i;
+                console.log("✅ Found verb at index", i, ":", word);
+                break;
+            }
+        }
+        
+        // 동사까지 또는 최소 4개 단어까지 첫째 줄에 포함
+        line1Words = words.slice(0, verbIndex + 1);
+        line2Words = words.slice(verbIndex + 1);        console.log("🎯 Question word + aux + subject + verb pattern detected, forcing verb to line 1");
+        console.log("  - Line 1:", line1Words.join(" "));
+        console.log("  - Line 2:", line2Words.join(" "));
+        return [line1Words.join(" "), line2Words.join(" ").trim()];
+    }
 
     let modalHavePpFoundAndSplit = false;
 
