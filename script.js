@@ -1037,6 +1037,14 @@ const SUBJECT_AUX_CLONE_OFFSET_X = 15; // 주어+조동사 복제본이 의문�
 let cloneCreatedForCurrentAnswer = false; // 현재 답변에서 복제본이 이미 생성되었는지 추적
 // --- END: 주어+조동사 복제본 관련 변수들 ---
 
+// --- START: 바운스 애니메이션 관련 변수들 ---
+let activeBounceAnimations = []; // 활성 바운스 애니메이션들을 저장
+const BOUNCE_DURATION_UP = WORD_ANIM_DURATION_UP; // 올라가는 시간: 220ms (웨이브와 동일)
+const BOUNCE_DURATION_DOWN = WORD_ANIM_DURATION_DOWN; // 내려오는 시간: 550ms (웨이브와 동일)
+const BOUNCE_HEIGHT = WORD_ANIM_MAX_HEIGHT; // 바운스 높이: 18px (웨이브와 동일)
+const BOUNCE_DELAY_BETWEEN_WORDS = 100; // 단어 간 바운스 지연 시간 (ms)
+// --- END: 바운스 애니메이션 관련 변수들 ---
+
 
 function startWordWaveAnimation(wordRect, drawingContext, enableCloneGeneration = true) {
   if (!wordRect || !wordRect.word || !drawingContext) return;
@@ -1324,6 +1332,118 @@ function findSubjectAnimationForAux(auxAnimation) {
 }
 
 // --- END: 주어+조동사 복제본 관련 함수들 ---
+
+// --- START: 바운스 애니메이션 관련 함수들 ---
+
+// 바운스 애니메이션 트리거 함수
+function triggerBounceAnimationForWords(sentenceObject, isQuestion) {
+  console.log("🏀 triggerBounceAnimationForWords called:", { isQuestion, sentenceObject });
+  
+  if (!sentenceObject || !centerSentenceWordRects || centerSentenceWordRects.length === 0) {
+    console.log("❌ No sentence or word rects available for bounce animation");
+    return;
+  }
+
+  // 첫 번째 줄(lineIndex === 0)의 단어들만 가져오기
+  const firstLineWords = centerSentenceWordRects.filter(r => r.lineIndex === 0);
+  
+  if (firstLineWords.length === 0) {
+    console.log("❌ No words found in first line");
+    return;
+  }
+
+  let relevantWordRects = [];
+  
+  if (isQuestion) {
+    // 의문사만: 첫 번째 줄에서 실제 의문사인 단어들만
+    relevantWordRects = firstLineWords.filter(wordRect => {
+      const cleanWord = wordRect.word.toLowerCase().replace(/[^a-z0-9']/g, '');
+      const isWhWord = isWh(cleanWord);
+      console.log(`🔍 Checking word "${wordRect.word}" (clean: "${cleanWord}") - isWh: ${isWhWord}`);
+      return isWhWord;
+    });
+  } else {
+    // 조동사+주어만: 첫 번째 줄에서 조동사이거나 주어인 단어들만
+    relevantWordRects = firstLineWords.filter(wordRect => {
+      const cleanWord = wordRect.word.toLowerCase().replace(/[^a-z0-9']/g, '');
+      const isAuxWord = isAux(cleanWord);
+      const isSubject = !isWh(cleanWord) && !isAux(cleanWord) && !isVerb(cleanWord);
+      console.log(`🔍 Checking word "${wordRect.word}" (clean: "${cleanWord}") - isAux: ${isAuxWord}, isSubject: ${isSubject}`);
+      return isAuxWord || isSubject;
+    });
+  }
+  
+  if (relevantWordRects.length === 0) {
+    console.log("❌ No relevant words found for bounce animation");
+    return;
+  }
+
+  console.log(`🏀 Found ${relevantWordRects.length} words to bounce:`, relevantWordRects.map(r => r.word));
+  // 단어들을 순서대로 바운스 애니메이션 시작
+  relevantWordRects.forEach((wordRect, index) => {
+    setTimeout(() => {
+      if (!isGameRunning || isGamePaused) return;
+      
+      const bounceAnimation = {
+        wordRect: { ...wordRect },
+        startTime: performance.now(),
+        durationUp: BOUNCE_DURATION_UP,
+        durationDown: BOUNCE_DURATION_DOWN,
+        maxHeight: BOUNCE_HEIGHT,
+        currentYOffset: 0,
+        isActive: true
+      };
+      
+      activeBounceAnimations.push(bounceAnimation);
+      console.log(`🏀 Started bounce animation for word: ${wordRect.word}`);
+    }, index * BOUNCE_DELAY_BETWEEN_WORDS);
+  });
+}
+
+// 바운스 애니메이션 업데이트 함수
+function updateBounceAnimations(currentTime) {
+  for (let i = activeBounceAnimations.length - 1; i >= 0; i--) {
+    const bounceAnim = activeBounceAnimations[i];
+    
+    if (!bounceAnim.isActive) {
+      activeBounceAnimations.splice(i, 1);
+      continue;
+    }
+
+    const elapsedTime = currentTime - bounceAnim.startTime;
+    const totalDuration = bounceAnim.durationUp + bounceAnim.durationDown;
+    
+    if (elapsedTime >= totalDuration) {
+      // 애니메이션 완료
+      bounceAnim.currentYOffset = 0;
+      bounceAnim.isActive = false;
+      activeBounceAnimations.splice(i, 1);
+      continue;
+    }
+
+    // 웨이브 애니메이션과 동일한 부드러운 이징 적용
+    let yOffsetFactor;
+    if (elapsedTime < bounceAnim.durationUp) {
+      // Up phase - ease-out quad (웨이브 애니메이션과 동일)
+      const t = elapsedTime / bounceAnim.durationUp;
+      yOffsetFactor = t * (2 - t);
+    } else {
+      // Down phase - ease-in quad (웨이브 애니메이션과 동일)
+      const downTime = elapsedTime - bounceAnim.durationUp;
+      const t = downTime / bounceAnim.durationDown;
+      yOffsetFactor = (1 - t) * (1 - t);
+    }
+    
+    bounceAnim.currentYOffset = -yOffsetFactor * bounceAnim.maxHeight;
+  }
+}
+
+// 바운스 애니메이션을 수동으로 제거하는 함수
+function clearBounceAnimations() {
+  activeBounceAnimations = [];
+}
+
+// --- END: 바운스 애니메이션 관련 함수들 ---
 // --- END: Word Animation Variables and Functions ---
 
 // 의문사 + 조동사 + 주어 + 동사 패턴 감지 함수
@@ -1611,14 +1731,22 @@ function drawSingleSentenceBlock(sentenceObject, baseY, isQuestionBlock, blockCo
                     matchingAnimation = anim;
                     break;
                 }
-            }
-
-            if (matchingAnimation) {
+            }            if (matchingAnimation) {
                 matchingAnimation.charPositions.forEach((charPos) => {
                     ctx.fillText(charPos.char, charPos.x, charPos.currentY);
                 });
             } else {
-                ctx.fillText(rawWord, wordStartX, currentLineCenterY);
+                // 바운스 애니메이션 오프셋 확인
+                let bounceOffset = 0;
+                for (const bounceAnim of activeBounceAnimations) {
+                    if (bounceAnim.wordRect.word === currentWordRectData.word &&
+                        Math.abs(bounceAnim.wordRect.x - currentWordRectData.x) < 1 &&
+                        Math.abs(bounceAnim.wordRect.y - currentWordRectData.y) < 1) {
+                        bounceOffset = bounceAnim.currentYOffset;
+                        break;
+                    }
+                }
+                ctx.fillText(rawWord, wordStartX, currentLineCenterY + bounceOffset);
             }
 
             localWordRects.push(currentWordRectData);
@@ -2307,10 +2435,14 @@ function update(delta) {
   if (questionWordClones.length > 0) {
     updateQuestionWordClones(performance.now());
   }
-  
-  // Update subject+auxiliary clones
+    // Update subject+auxiliary clones
   if (subjectAuxClones.length > 0) {
     updateSubjectAuxClones(performance.now());
+  }
+  
+  // Update bounce animations
+  if (activeBounceAnimations.length > 0) {
+    updateBounceAnimations(performance.now());
   }
 }
 
@@ -2400,11 +2532,13 @@ function resetGameStateForStartStop() {
 
   // Reset word animations
   activeAnimations = []; // Clear the array of active animations
-  
-  // 게임 시작/정지 시 의문사 복제본 제거 및 플래그 리셋 (주어+조동사 복제본도 함께 제거됨)
+    // 게임 시작/정지 시 의문사 복제본 제거 및 플래그 리셋 (주어+조동사 복제본도 함께 제거됨)
   clearQuestionWordClones();
   cloneCreatedForCurrentQuestion = false;
   cloneCreatedForCurrentAnswer = false;
+  
+  // 바운스 애니메이션 정리
+  clearBounceAnimations();
 }
 
 function startGame() {
@@ -2501,20 +2635,29 @@ function handleCanvasInteraction(clientX, clientY, event) {
       showTranslationForQuestion = true; showTranslationForAnswer = false;
       if (activeWordTranslation) activeWordTranslation.show = false;
       if (wordTranslationTimeoutId) clearTimeout(wordTranslationTimeoutId);
-      activeWordTranslation = null; isActionLocked = true;
-
-      if (currentQuestionSentenceIndex !== null) {
+      activeWordTranslation = null; isActionLocked = true;      if (currentQuestionSentenceIndex !== null) {
           window.speechSynthesis.cancel();
           playSentenceAudio(currentQuestionSentenceIndex)
               .then(() => {
-                  // 오디오 시작 후 애니메이션 트리거
-                  triggerSentenceWordAnimation(
-                      currentQuestionSentence,
-                      true, // isQuestion
-                      centerSentenceWordRects,
-                      ctx,
-                      300 // AUX_ANIMATION_DELAY_QUESTION 과 동일한 지연
-                  );
+                  // 첫 번째 터치인지 확인 (복제본이 아직 생성되지 않은 경우)
+                  if (!cloneCreatedForCurrentQuestion) {
+                      // 첫 번째 터치: 복제본을 생성하는 wave 애니메이션 트리거
+                      triggerSentenceWordAnimation(
+                          currentQuestionSentence,
+                          true, // isQuestion
+                          centerSentenceWordRects,
+                          ctx,
+                          300 // AUX_ANIMATION_DELAY_QUESTION 과 동일한 지연
+                      );
+                  } else {
+                      // 두 번째 이후 터치: 바운스 애니메이션 트리거 (복제본 생성 없음)
+                      // 의문사 단어들 먼저 바운스
+                      triggerBounceAnimationForWords(currentQuestionSentence, true);
+                      // 100ms 지연 후 조동사+주어 단어들 바운스
+                      setTimeout(() => {
+                          triggerBounceAnimationForWords(currentQuestionSentence, false);
+                      }, 100);
+                  }
               })
               .catch(err => console.error("Error playing question sentence audio from play button:", err));
       }
