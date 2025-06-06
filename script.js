@@ -1343,12 +1343,13 @@ function triggerBounceAnimationForWords(sentenceObject, isQuestion) {
     console.log("❌ No sentence or word rects available for bounce animation");
     return;
   }
-
-  // 첫 번째 줄(lineIndex === 0)의 단어들만 가져오기
-  const firstLineWords = centerSentenceWordRects.filter(r => r.lineIndex === 0);
+  // 질문 문장의 첫 번째 줄(lineIndex === 0)의 단어들만 가져오기
+  const firstLineWords = centerSentenceWordRects.filter(r => 
+    r.lineIndex === 0 && r.isQuestionWord === true
+  );
   
   if (firstLineWords.length === 0) {
-    console.log("❌ No words found in first line");
+    console.log("❌ No words found in question sentence first line");
     return;
   }
 
