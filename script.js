@@ -1122,9 +1122,11 @@ function updateWordAnimations(currentTime) { // Plural, as it updates all active
       
       // 의문사가 정점(80% 지점)에 도달했을 때 복제본 생성 (복제본 생성이 허용된 경우에만)
       if (anim.isQuestionWord && !anim.cloneCreated && anim.enableCloneGeneration && !cloneCreatedForCurrentQuestion && t >= 0.8) {
-        createQuestionWordClone(anim);
-        anim.cloneCreated = true;
+        createQuestionWordClone(anim);        anim.cloneCreated = true;
         cloneCreatedForCurrentQuestion = true; // 현재 질문에 대한 복제본 생성 완료 플래그 설정
+        console.log("✅ Question word clone created - flag set to true");
+        console.log("  - Question index:", currentQuestionSentenceIndex);
+        console.log("  - Clone word:", anim.wordText);
       }
       
       // 조동사가 정점(80% 지점)에 도달했을 때 주어+조동사 복제본 생성 (복제본 생성이 허용된 경우에만)
@@ -1216,9 +1218,11 @@ function updateQuestionWordClones(currentTime) {
 
 // 의문사 복제본을 수동으로 제거하는 함수 (주어+조동사 복제본도 함께 제거)
 function clearQuestionWordClones() {
+  console.log("🧹 Clearing question word clones - before:", questionWordClones.length, "clones");
   questionWordClones = [];
   // 의문사 복제본이 사라질 때 주어+조동사 복제본도 동시에 제거
   clearSubjectAuxClones();
+  console.log("🧹 Question word clones cleared");
 }
 
 // --- START: 주어+조동사 복제본 관련 함수들 ---
@@ -1534,12 +1538,19 @@ function triggerSentenceWordAnimation(sentenceObject, isQuestion, allWordRects, 
     
     console.log("📝 Relevant word rects count:", relevantWordRects.length);
 
-    if (relevantWordRects.length === 0) return;
-
-    if (isQuestion) {
+    if (relevantWordRects.length === 0) return;    if (isQuestion) {
       // 이미 복제본이 생성된 질문인 경우 애니메이션을 다시 시작하지 않음
+      // 추가 안전장치: 현재 질문이 유효한지도 확인
       if (cloneCreatedForCurrentQuestion) {
         console.log("⚠️ Clone already created for current question, skipping animation");
+        console.log("  - Current question valid:", !!currentQuestionSentence);
+        console.log("  - Question index:", currentQuestionSentenceIndex);
+        return;
+      }
+      
+      // 현재 질문 상태 재확인 (타이밍 이슈 방지)
+      if (!currentQuestionSentence || currentQuestionSentenceIndex === null) {
+        console.log("⚠️ Current question state invalid, skipping animation");
         return;
       }
 
@@ -2061,8 +2072,7 @@ function startFireworks(sentenceTextForFireworks, globalSentenceIndex, explosion
         showTranslationForQuestion = false; showTranslationForAnswer = false;
         
         // 새로운 질문 시작 시 복제본 생성 플래그 리셋
-        cloneCreatedForCurrentQuestion = false;
-    } else { // Answer
+        cloneCreatedForCurrentQuestion = false;    } else { // Answer
         if (currentQuestionSentence && currentQuestionSentenceIndex === globalSentenceIndex - 1) {
             questionTextForLayout = (currentQuestionSentence.line1 + " " + currentQuestionSentence.line2).trim();
         } else if (globalSentenceIndex > 0 && sentences[globalSentenceIndex - 1]) {
@@ -2073,18 +2083,21 @@ function startFireworks(sentenceTextForFireworks, globalSentenceIndex, explosion
         currentAnswerSentence = null; currentAnswerSentenceIndex = null;
         showPlayButton = false;
         showTranslationForAnswer = false;
-    }    if (activeWordTranslation) activeWordTranslation.show = false;
+        
+        // 답변 폭발 시작 시 클론 플래그 리셋
+        cloneCreatedForCurrentAnswer = false;
+    }if (activeWordTranslation) activeWordTranslation.show = false;
     activeWordTranslation = null;
     if (wordTranslationTimeoutId) { clearTimeout(wordTranslationTimeoutId); wordTranslationTimeoutId = null; }
-    centerSentenceWordRects = [];
-    
-    // 폭발 시퀀스 시작 시 모든 활성 애니메이션과 기존 복제본들을 정리
+    centerSentenceWordRects = [];    // 폭발 시퀀스 시작 시 모든 활성 애니메이션과 기존 복제본들을 정리
     console.log("🧹 Clearing active animations and existing clones during fireworks start");
     activeAnimations = [];
     
-    // 기존 복제본들도 모두 제거하여 이전 문장의 복제본이 남아있지 않도록 함
-    console.log("🧹 Clearing all existing clones to prevent old sentence clones");
-    clearQuestionWordClones(); // 의문사 복제본과 주어+조동사 복제본 모두 제거
+    // 폭발 시작 시 모든 클론 제거 및 모든 플래그 리셋 (새로운 사이클 시작)
+    console.log("🧹 Clearing all clones and resetting all flags for new sentence cycle");
+    clearQuestionWordClones(); // 모든 클론 제거
+    cloneCreatedForCurrentQuestion = false; // 새 문장 사이클 시작
+    cloneCreatedForCurrentAnswer = false;
 
     const [fireworkLine1, fireworkLine2] = splitSentence(sentenceTextForFireworks, isNewSentenceQuestion);
     const wordsForFireworks = [];
@@ -2243,20 +2256,29 @@ function updateFireworks() {
             playAudioForThisSentence = true;
             
             // 새로운 질문 설정 시 복제본 생성 플래그 리셋
-            cloneCreatedForCurrentQuestion = false;
-        } else { // Answer
+            cloneCreatedForCurrentQuestion = false;        } else { // Answer
             const questionIndexOfThisAnswer = newSentenceIndex - 1;
             if (questionIndexOfThisAnswer >= 0 && sentences[questionIndexOfThisAnswer]) {
+                // 질문이 이미 있고 동일한 인덱스인 경우, 복제본 플래그 유지
+                const shouldPreserveCloneFlag = currentQuestionSentence && currentQuestionSentenceIndex === questionIndexOfThisAnswer;
+                
                 if (!currentQuestionSentence || currentQuestionSentenceIndex !== questionIndexOfThisAnswer) {
                     const [qL1, qL2] = splitSentence(sentences[questionIndexOfThisAnswer], true);
                     currentQuestionSentence = {line1: qL1, line2: qL2};
                     currentQuestionSentenceIndex = questionIndexOfThisAnswer;
+                    
+                    // 새로운 질문이 로드된 경우에만 복제본 플래그 리셋
+                    if (!shouldPreserveCloneFlag) {
+                        cloneCreatedForCurrentQuestion = false;
+                    }
                 }
                  showPlayButtonQuestion = true;
             } else {
                 currentQuestionSentence = null; currentQuestionSentenceIndex = null;
                 showPlayButtonQuestion = false;
-            }            currentAnswerSentence = newSentenceObject; currentAnswerSentenceIndex = newSentenceIndex;
+                // 질문이 없어진 경우에만 복제본 플래그 리셋
+                cloneCreatedForCurrentQuestion = false;
+            }currentAnswerSentence = newSentenceObject; currentAnswerSentenceIndex = newSentenceIndex;
             showPlayButton = true;
             playAudioForThisSentence = true;
             
@@ -2532,10 +2554,10 @@ function resetGameStateForStartStop() {
     centerSentenceWordRects = []; isActionLocked = false;
 
   // Reset word animations
-  activeAnimations = []; // Clear the array of active animations
-    // 게임 시작/정지 시 의문사 복제본 제거 및 플래그 리셋 (주어+조동사 복제본도 함께 제거됨)
-  clearQuestionWordClones();
-  cloneCreatedForCurrentQuestion = false;
+  activeAnimations = []; // Clear the array of active animations  // 게임 시작/정지 시 모든 클론 제거 및 모든 플래그 리셋 (완전 초기화)
+  console.log("🔄 Game start/stop - clearing all clones and resetting all flags");
+  clearQuestionWordClones(); // 모든 클론 제거
+  cloneCreatedForCurrentQuestion = false; // 게임 초기화
   cloneCreatedForCurrentAnswer = false;
   
   // 바운스 애니메이션 정리
@@ -2636,12 +2658,19 @@ function handleCanvasInteraction(clientX, clientY, event) {
       showTranslationForQuestion = true; showTranslationForAnswer = false;
       if (activeWordTranslation) activeWordTranslation.show = false;
       if (wordTranslationTimeoutId) clearTimeout(wordTranslationTimeoutId);
-      activeWordTranslation = null; isActionLocked = true;      if (currentQuestionSentenceIndex !== null) {
+      activeWordTranslation = null; isActionLocked = true;      if (currentQuestionSentenceIndex !== null && currentQuestionSentence) {
+          console.log("🎮 Question play button touched - Current state:");
+          console.log("  - Question Index:", currentQuestionSentenceIndex);
+          console.log("  - Clone Created:", cloneCreatedForCurrentQuestion);
+          console.log("  - Question Sentence:", currentQuestionSentence);
+          
           window.speechSynthesis.cancel();
           playSentenceAudio(currentQuestionSentenceIndex)
               .then(() => {
                   // 첫 번째 터치인지 확인 (복제본이 아직 생성되지 않은 경우)
-                  if (!cloneCreatedForCurrentQuestion) {
+                  // 추가 안전장치: 현재 질문이 유효한지도 확인
+                  if (!cloneCreatedForCurrentQuestion && currentQuestionSentence && currentQuestionSentenceIndex !== null) {
+                      console.log("🎯 First touch - triggering wave animation with clone generation");
                       // 첫 번째 터치: 복제본을 생성하는 wave 애니메이션 트리거
                       triggerSentenceWordAnimation(
                           currentQuestionSentence,
@@ -2650,7 +2679,8 @@ function handleCanvasInteraction(clientX, clientY, event) {
                           ctx,
                           300 // AUX_ANIMATION_DELAY_QUESTION 과 동일한 지연
                       );
-                  } else {
+                                    } else if (cloneCreatedForCurrentQuestion && currentQuestionSentence) {
+                      console.log("🏀 Subsequent touch - triggering bounce animation only");
                       // 두 번째 이후 터치: 바운스 애니메이션 트리거 (복제본 생성 없음)
                       // 의문사 단어들 먼저 바운스
                       triggerBounceAnimationForWords(currentQuestionSentence, true);
@@ -2658,6 +2688,11 @@ function handleCanvasInteraction(clientX, clientY, event) {
                       setTimeout(() => {
                           triggerBounceAnimationForWords(currentQuestionSentence, false);
                       }, 100);
+                  } else {
+                      console.log("⚠️ Unexpected state in question play button handler");
+                      console.log("  - cloneCreated:", cloneCreatedForCurrentQuestion);
+                      console.log("  - currentQuestion:", !!currentQuestionSentence);
+                      console.log("  - questionIndex:", currentQuestionSentenceIndex);
                   }
               })
               .catch(err => console.error("Error playing question sentence audio from play button:", err));
@@ -2668,10 +2703,11 @@ function handleCanvasInteraction(clientX, clientY, event) {
       if (activeWordTranslation) activeWordTranslation.show = false;
       if (wordTranslationTimeoutId) clearTimeout(wordTranslationTimeoutId);
       activeWordTranslation = null;
-      isActionLocked = true;      // 답변 플레이 버튼 터치 시 의문사 복제본 제거 및 플래그 리셋 (주어+조동사 복제본도 함께 제거됨)
-      clearQuestionWordClones();
-      cloneCreatedForCurrentQuestion = false;
-      cloneCreatedForCurrentAnswer = false;
+      isActionLocked = true;      // 답변 플레이 버튼 터치 시 모든 클론들 제거 및 모든 플래그 리셋
+      console.log("🎯 Answer play button touched - clearing all clones and resetting all flags");
+      clearQuestionWordClones(); // 모든 클론 제거
+      cloneCreatedForCurrentQuestion = false; // 질문 클론 플래그도 리셋
+      cloneCreatedForCurrentAnswer = false; // 답변 클론 플래그 리셋
 
       if (currentAnswerSentenceIndex !== null) {
           window.speechSynthesis.cancel();
@@ -2729,7 +2765,6 @@ function handleCanvasInteraction(clientX, clientY, event) {
     if (wordTranslationTimeoutId) { clearTimeout(wordTranslationTimeoutId); wordTranslationTimeoutId = null; }
   }
   showTranslationForQuestion = false; showTranslationForAnswer = false;
-
   const size = MIN_BUBBLE_SIZE + Math.random() * (MAX_BUBBLE_SIZE - MIN_BUBBLE_SIZE);
   const spawnX = player.x + player.w / 2 - size / 2;
   bullets.push({
@@ -2740,8 +2775,12 @@ function handleCanvasInteraction(clientX, clientY, event) {
     swayAmplitude: size * (BUBBLE_SWAY_AMPLITUDE_FACTOR_MIN + Math.random() * (BUBBLE_SWAY_AMPLITUDE_FACTOR_MAX - BUBBLE_SWAY_AMPLITUDE_FACTOR_MIN)),
     swayPhaseOffset: Math.random() * Math.PI * 2,
     driftXPerSecond: (Math.random() - 0.5) * 2 * BUBBLE_HORIZONTAL_DRIFT_PPS_MAX,
-  });
-  sounds.shoot.play();
+  });  sounds.shoot.play();
+    // 탄환 발사 시 모든 클론들 제거 및 모든 플래그 리셋 (새로운 사이클 시작)
+  console.log("🚀 Bullet fired - clearing all clones and resetting all clone flags for fresh cycle");
+  clearQuestionWordClones(); // 모든 클론 제거
+  cloneCreatedForCurrentQuestion = false; // 질문 클론 플래그 리셋 (새 사이클)
+  cloneCreatedForCurrentAnswer = false; // 답변 클론 플래그 리셋
   event.preventDefault();
 }
 
